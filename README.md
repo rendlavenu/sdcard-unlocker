@@ -1,43 +1,53 @@
-# OEM / Educational MicroSD Card Hardware Unlocker & Deep-Dive Guide
+# MicroSD Hardware Unlocker: Salvaging Locked OEM / BYJU'S Cards
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Target](https://img.shields.io/badge/Target-OEM%20%2F%20Educational%20MicroSDXC-brightgreen.svg)](#)
-[![Hardware](https://img.shields.io/badge/Verified%20Controller-Broadcom%20bcm2835--mmc%20(Raspberry%20Pi)-blue.svg)](#)
+[![Verified Controller](https://img.shields.io/badge/Verified%20Controller-Broadcom%20bcm2835--mmc%20(Raspberry%20Pi)-blue.svg)](#)
+[![Target Media](https://img.shields.io/badge/Target-OEM%20%2F%20Educational%20MicroSDXC-brightgreen.svg)](#)
 
-A comprehensive guide, automated tooling, and technical reverse-engineering analysis for unlocking hardware-level electronic write protection (`TMP_WRITE_PROTECT`) from OEM educational MicroSD cards (such as those bundled with BYJU'S, Aakash, and other learning tablets), eradicating proprietary encrypted vendor partitions, and restoring them to full, high-speed Class 10 storage.
+> [!IMPORTANT]
+> ### 💡 The Breakthrough (TL;DR)
+> * **The Myth**: Attempting to format locked BYJU'S or educational MicroSD cards on a PC or rooted Android tablet fails with `Write-protected` or `Error 84 (Illegal byte sequence)`. The community assumed these cards had **permanent factory OTP fuses** or vendor-locked firmware.
+> * **The Reality**: The cards are **NOT permanently bricked**. They only have an electronic temporary write-protection bit (`TMP_WRITE_PROTECT`). USB card readers drop the raw low-level unlock command, and budget Android devices fail because MediaTek's Linux kernel driver has a FIFO watermark bug that hangs on 16-byte transfers (`CMD27`).
+> * **The Fix**: Booting any Raspberry Pi 3B+/4 from a USB pendrive provides direct Broadcom MMC bus access, clearing the hardware write-lock in **0.5 seconds** and restoring the card to full 60GB Class 10 storage.
 
 ---
 
-> [!WARNING]
-> ### ⚠️ Legal & Safety Disclaimer
-> 1. **Research & E-Waste Reduction Only**: This project and repository are published strictly for educational research, reverse engineering, technical interoperability, and electronic waste reduction (Right to Repair). The primary objective is to salvage functional flash storage hardware and keep working silicon out of landfills after educational subscriptions or hardware life cycles terminate.
-> 2. **Irreversible Data Erasure**: The unlocking, wiping, and partitioning procedures described herein will **permanently and irreversibly destroy all existing data, partitions, and preloaded content** residing on the storage medium. Ensure you have proper authorization to reuse the card and that no critical data remains on the device.
-> 3. **No Warranty & Limitation of Liability**: All scripts, binaries, and documentation are provided "AS IS", without warranty of any kind, express or implied, including but not limited to fitness for a particular purpose or non-infringement. Under no circumstances shall the authors or contributors be held liable for any data loss, hardware damage, system instability, or legal ramifications arising from the use or misuse of this repository. You assume all responsibility.
-> 4. **Trademarks**: All brand names, trademarks, product names, and company names cited in this document (including BYJU'S, Samsung, MediaTek, Broadcom, Raspberry Pi) are the intellectual property of their respective owners. Their mention is solely for technical diagnostic and descriptive interoperability purposes under fair use doctrine and does not imply affiliation, sponsorship, or endorsement.
+## ⚡ Quick 1-Minute Recovery
+
+If you just want to unlock and format your card immediately:
+
+1. **Flash a USB pendrive** with Raspberry Pi OS Lite (64-bit) using [Raspberry Pi Imager](https://www.raspberrypi.com/software/) (enable SSH in settings).
+2. **Boot your Raspberry Pi from USB** with the onboard MicroSD slot empty.
+3. **Hot-plug the locked card** into the Pi's slot (`/dev/mmcblk0`).
+4. **SSH into the Pi** and run:
+   ```bash
+   git clone https://github.com/rendlavenu/sdcard-unlocker.git
+   cd sdcard-unlocker
+   sudo ./scripts/unlock_card.sh /dev/mmcblk0
+   ```
+*(The script automatically clears the hardware lock, wipes both primary & secondary backup GPT tables, and formats as clean, 4 MiB-aligned exFAT).*
 
 ---
 
 ## 📌 Table of Contents
-1. [The Problem: Millions of "Bricked" MicroSD Cards](#-the-problem)
-2. [Target Card Identification & Known OEM Fingerprints](#-target-card-identification--known-oem-fingerprints)
-3. [What Was Previously Known vs. Our Novel Discoveries](#-novel-findings--community-myths-busted)
+1. [The Problem: Why Millions of Cards Were Abandoned](#-the-problem)
+2. [What Was Previously Known vs. Our Novel Discoveries](#-novel-findings--busting-the-mediatek-myth)
    - [The MediaTek `mtk-msdc` Sub-512B PIO FIFO Bug (Error 84 Root Cause)](#the-mediatek-mtk-msdc-sub-512b-pio-fifo-bug)
    - [The Host Controller Matrix](#the-host-controller-matrix)
    - [The Universal Raspberry Pi USB-Boot Workflow](#the-universal-raspberry-pi-usb-boot-workflow)
+3. [Target Card Identification & Known OEM Markings](#-target-card-identification--known-oem-markings)
 4. [How the Hardware Lock Works (CSD Register Dissection)](#-how-the-hardware-lock-works)
-5. [Prerequisites & Bill of Materials](#-prerequisites)
-6. [Quick Start: 1-Click Automated Recovery](#-quick-start-1-click-recovery)
-7. [Manual Step-by-Step Procedure](#-manual-step-by-step-procedure)
-8. [Edge Cases & Technical Deep-Dive](#-edge-cases--technical-deep-dive)
-9. [Post-Unlock Verification & Benchmarks](#-post-unlock-verification--benchmarks)
-10. [Troubleshooting & FAQ](#-troubleshooting--faq)
-11. [Repository Structure](#-repository-structure)
+5. [Manual Step-by-Step Procedure](#-manual-step-by-step-procedure)
+6. [Critical Edge Cases (Secondary GPT Restoration, Bus Rescan)](#-edge-cases--technical-deep-dive)
+7. [Post-Unlock Verification & Benchmarks](#-post-unlock-verification--benchmarks)
+8. [Troubleshooting & FAQ](#-troubleshooting--faq)
+9. [Disclaimer & Legal Notice](#-disclaimer--legal-notice)
 
 ---
 
 ## 🛑 The Problem
 
-Millions of 64 GB, 128 GB, and 256 GB MicroSD cards distributed with educational learning tablets end up in drawers and e-waste landfills once subscriptions expire. 
+Millions of 64 GB, 128 GB, and 256 GB MicroSD cards distributed with educational learning tablets (BYJU'S, Aakash, Allen) end up in drawers and e-waste landfills once subscriptions expire. 
 
 When users connect these cards to a PC, Mac, or camera:
 - Files cannot be deleted, renamed, or added.
@@ -46,60 +56,16 @@ When users connect these cards to a PC, Mac, or camera:
 
 ---
 
-## 🔍 Target Card Identification & Known OEM Fingerprints
+## 🔬 Novel Findings: Busting the MediaTek Myth
 
-If you have a locked MicroSD card from an educational bundle, use this section to identify whether your card matches this recovery profile.
-
-### 1. Physical Markings & Laser Etchings
-* **Form Factor**: MicroSDXC (typically 64 GB, 128 GB, or 256 GB), UHS-I Class 10 U1.
-* **Front Casing**: Plain black casing, often unbranded or printed with standard MicroSDXC / Class 10 markings.
-* **Rear Laser Etchings** (micro-etched on the gold contact pin side):
-  * **Line 1 (Batch / Date Code)**: `3A2236HIA` *(or similar batch variations: `3A22...`, `3A21...`)*
-  * **Line 2 (Wafer / Serial Code)**: `CMH36A031MA6311` *(or alphanumeric tracking string)*
-  * **Manufacturing Origin**: Made in Taiwan / OEM assembly.
-
-### 2. Associated Tablets & Educational Bundles
-These cards were widely bundled with tablets by EdTech programs and coaching institutes across India:
-* **Educational Bundles**: **BYJU'S Learning App / Think & Learn Pvt. Ltd.**, **Aakash Digital (AESL)**, **Allen Career Institute**, **PhysicsWallah**, **Extramarks**.
-* **Preloaded Data**: Contains encrypted media catalogs (`.enc`, `.mp4` chunks, `com.byjus.*` assets) and encrypted course partition structures.
-* **Common Bundled Tablet Models**:
-  * **Samsung Galaxy Tab A7 Lite** (`SM-T220` Wi-Fi / `SM-T225` LTE)
-  * **Lenovo Tab M8 HD / FHD** (`TB-8505X`, `TB-8505F`, `TB-8705F`)
-  * **Lenovo Tab M10 / M10 Plus** (`TB-X505X`, `TB-X606V`)
-  * **Lava / Wisdom / Wishtel OEM Android Tablets**
-
-### 3. Electronic Register Telemetry (Sysfs / Dmesg)
-When inserted into a Linux system with a native MMC controller, reading the hardware registers via `/sys/bus/mmc/devices/mmc*:0001/` yields:
-
-| Register / Field | Raw Hex / Value | Interpretation |
-| :--- | :--- | :--- |
-| **Card Identification (CID)** | `000000555344000010000029cc01690d` | Standard OEM flash CID string |
-| **Product Name (PNM)** | `USD` (`55 53 44 00 00`) | Generic OEM product identifier |
-| **Product Revision (PRV)** | `0x10` | Hardware Revision 1.0 |
-| **Manufacturing Date (MDT)** | `0x0169` (09/2022) | Manufactured September 2022 |
-| **Card-Specific Data (CSD) - Locked** | `400E00325B590001DC277F800A4010B9` | **Byte 14 = `0x10` (`TMP_WRITE_PROTECT = 1`)** |
-| **Card-Specific Data (CSD) - Unlocked**| `400E00325B590001DC277F800A40008B` | **Byte 14 = `0x00` (`TMP_WRITE_PROTECT = 0`)** |
-| **SD Status Register (SSR)** | `000000000800000004049000080a...` | Class 10 / High Speed bus indicator |
-| **SD Card Configuration (SCR)** | `0285808300000000` | SD Spec Version 3.0 / Physical Layer |
-
-> [!TIP]
-> If your card's CSD Byte 14 has value **`0x10`**, the write-protection is purely electronic and **100% reversible** using the tools in this repository!
-
----
-
-## 🔬 Novel Findings & Community Myths Busted
-
-Previous guides across XDA Developers, Reddit (`r/androidafterlife`, `r/raspberry_pi`), and open-source issue trackers commonly advised:
-> *"USB readers fail because of SCSI encapsulation. Just put the card into a rooted Android phone and run `sdtool`."*
-
-However, when hundreds of users followed this advice, running `sdtool /dev/block/mmcblk1 unlock` on rooted tablets and phones consistently threw:
+Previous forum guides across XDA Developers and Reddit advised using a rooted Android phone with `sdtool`. However, when users ran `sdtool` on their tablets, it consistently failed:
 ```text
 [-] Failed to send command: Illegal byte sequence (Linux errno 84: EILSEQ)
 ```
-Because of this error, **the community widely concluded that educational OEM cards were permanently locked via OTP (One-Time Programmable) factory fuses or encrypted proprietary firmware.**
+This error led the entire community to believe the cards were permanently hardware-locked via OTP fuses.
 
 ### The MediaTek `mtk-msdc` Sub-512B PIO FIFO Bug
-During our reverse-engineering investigation on budget Android tablets (MediaTek MT8768/MT6765)—the predominant hardware distributed with educational bundles—we captured low-level kernel driver traces in `dmesg` during `CMD27 (PROGRAM_CSD)` execution:
+During our reverse-engineering investigation on budget Android tablets (MediaTek MT8768/MT6765)—the exact hardware bundled by BYJU'S—we captured low-level kernel driver traces in `dmesg` during `CMD27 (PROGRAM_CSD)` execution:
 
 ```text
 [  412.392011] mtk-msdc 11240000.mmc: CMD<27> arg<00000000> ... resp<00000900>
@@ -140,6 +106,44 @@ Rather than hunting for rare Qualcomm-rooted phones or laptops with PCIe-attache
 
 ---
 
+## 🔍 Target Card Identification & Known OEM Markings
+
+If you have a locked MicroSD card from an educational bundle, use this section to identify whether your card matches this recovery profile.
+
+### 1. Physical Markings & Laser Etchings
+* **Form Factor**: MicroSDXC (typically 64 GB, 128 GB, or 256 GB), UHS-I Class 10 U1.
+* **Front Casing**: Plain black casing, often unbranded or printed with standard MicroSDXC / Class 10 markings.
+* **Rear Laser Etchings** (micro-etched on the gold contact pin side):
+  * **Line 1 (Batch / Date Code)**: `3A2236HIA` *(or similar batch variations: `3A22...`, `3A21...`)*
+  * **Line 2 (Wafer / Serial Code)**: `CMH36A031MA6311` *(or alphanumeric tracking string)*
+  * **Manufacturing Origin**: Made in Taiwan / OEM assembly.
+
+### 2. Associated Tablets & Educational Bundles
+These cards were widely bundled with tablets by EdTech programs and coaching institutes across India:
+* **Educational Bundles**: **BYJU'S Learning App / Think & Learn Pvt. Ltd.**, **Aakash Digital (AESL)**, **Allen Career Institute**, **PhysicsWallah**, **Extramarks**.
+* **Preloaded Data**: Contains encrypted media catalogs (`.enc`, `.mp4` chunks, `com.byjus.*` assets) and encrypted course partition structures.
+* **Common Bundled Tablet Models**:
+  * **Samsung Galaxy Tab A7 Lite** (`SM-T220` Wi-Fi / `SM-T225` LTE)
+  * **Lenovo Tab M8 HD / FHD** (`TB-8505X`, `TB-8505F`, `TB-8705F`)
+  * **Lenovo Tab M10 / M10 Plus** (`TB-X505X`, `TB-X606V`)
+  * **Lava / Wisdom / Wishtel OEM Android Tablets**
+
+### 3. Electronic Register Telemetry (Sysfs / Dmesg)
+When inserted into a Linux system with a native MMC controller, reading the hardware registers via `/sys/bus/mmc/devices/mmc*:0001/` yields:
+
+| Register / Field | Raw Hex / Value | Interpretation |
+| :--- | :--- | :--- |
+| **Card Identification (CID)** | `000000555344000010000029cc01690d` | Standard OEM flash CID string |
+| **Product Name (PNM)** | `USD` (`55 53 44 00 00`) | Generic OEM product identifier |
+| **Product Revision (PRV)** | `0x10` | Hardware Revision 1.0 |
+| **Manufacturing Date (MDT)** | `0x0169` (09/2022) | Manufactured September 2022 |
+| **Card-Specific Data (CSD) - Locked** | `400E00325B590001DC277F800A4010B9` | **Byte 14 = `0x10` (`TMP_WRITE_PROTECT = 1`)** |
+| **Card-Specific Data (CSD) - Unlocked**| `400E00325B590001DC277F800A40008B` | **Byte 14 = `0x00` (`TMP_WRITE_PROTECT = 0`)** |
+| **SD Status Register (SSR)** | `000000000800000004049000080a...` | Class 10 / High Speed bus indicator |
+| **SD Card Configuration (SCR)** | `0285808300000000` | SD Spec Version 3.0 / Physical Layer |
+
+---
+
 ## ⚙️ How the Hardware Lock Works
 
 Standard SD/SDHC/SDXC memory cards adhere to the SD Physical Layer Specification:
@@ -158,55 +162,9 @@ Educational vendors program Byte 14 to `0x10` before shipping. Clearing this bit
 
 ---
 
-## 🧰 Prerequisites
-
-1. **Hardware**:
-   - Raspberry Pi 3 Model B+, 4, or Zero 2W.
-   - Any spare USB flash drive (pendrive) $\ge$ 4 GB.
-   - Target locked MicroSD card (64 GB / 128 GB / 256 GB).
-2. **Software**:
-   - [Raspberry Pi Imager](https://www.raspberrypi.com/software/) installed on your PC.
-   - SSH client (`ssh` on Linux/macOS or PuTTY/Windows Terminal).
-
----
-
-## 🚀 Quick Start: 1-Click Recovery
-
-### 1. Prepare USB Boot Pendrive
-1. Open **Raspberry Pi Imager** on your computer.
-2. Select OS: **Raspberry Pi OS (other)** $\rightarrow$ **Raspberry Pi OS Lite (64-bit)**.
-3. Select Storage: Choose your **USB flash drive** (NOT an SD card).
-4. Click **Next** $\rightarrow$ **Edit Settings**:
-   - Set Username and Password (e.g. `pi` / `<your_password>`).
-   - Configure your local Wi-Fi network.
-   - Under the **Services** tab, check **Enable SSH**.
-5. Write the image.
-
-### 2. Boot Pi from USB
-1. **Remove any MicroSD card from the Raspberry Pi slot** (leave it empty).
-2. Insert your newly flashed **USB pendrive** into any Pi USB port.
-3. Power on the Pi. It will boot from USB in ~20–30 seconds.
-
-### 3. Hot-Plug Card & Run Recovery Utility
-1. Insert the locked MicroSD card into the Pi's MicroSD slot.
-2. Connect to the Pi via SSH:
-   ```bash
-   ssh <username>@<raspberry-pi-ip>
-   ```
-3. Clone this repository and execute the recovery script:
-   ```bash
-   git clone https://github.com/<your-username>/sdcard-csd-unlocker.git
-   cd sdcard-csd-unlocker
-   sudo ./scripts/unlock_card.sh /dev/mmcblk0
-   ```
-
-*(For FAT32 compatibility on older devices or dashcams, run with `--fs fat32`)*.
-
----
-
 ## 🛠 Manual Step-by-Step Procedure
 
-If you prefer executing the operations manually:
+If you prefer executing the operations manually without the automated script:
 
 ### 1. Unmount existing partitions
 ```bash
@@ -282,11 +240,7 @@ sudo mkfs.exfat -L "SDCARD" /dev/mmcblk0p1
 * **Issue**: Formatting partitions on arbitrary sector boundaries forces read-modify-write cycles on flash memory cells, causing high write latency and accelerated NAND degradation.
 * **Resolution**: Partitions are aligned strictly to **4 MiB boundaries** (`mkpart primary 4MiB 100%`), matching the physical erase block size (EBS) of Class 10 / UHS-1 flash.
 
-### 4. Legacy Raspberry Pi 3 Model B (Non-Plus)
-* **Issue**: Pi 3B (v1.2) does not enable USB boot out of the box.
-* **Resolution**: Boot once with Raspberry Pi OS on an SD card, add `program_usb_boot_mode=1` to `/boot/config.txt`, reboot, and confirm with `vcgencmd otp_dump | grep 17:`. (Pi 3B+ and Pi 4 have USB boot enabled from factory).
-
-### 5. Flash Array Health Verification (`f3`)
+### 4. Flash Array Health Verification (`f3`)
 * **Issue**: Unlocking removes software write-protection, but flash media that has suffered extensive wear may encounter bad-block exhaustion.
 * **Resolution**: Verify physical NAND health using `f3` (Fight Flash Fraud):
   ```bash
@@ -325,27 +279,10 @@ Once unlocked, the card was benchmarked across host systems:
 
 ---
 
-## 📁 Repository Structure
+## ⚠️ Disclaimer & Legal Notice
 
-```text
-sdcard-csd-unlocker/
-├── README.md                 # Complete documentation and research report
-├── LICENSE                   # MIT License
-├── .gitignore                # Build and temporary file ignores
-├── bin/
-│   ├── arm-sdtool            # Precompiled static ARM binary (Raspberry Pi / ARM64)
-│   └── amd64-sdtool          # Precompiled static x86_64 binary
-├── src/
-│   └── unlock_direct.c       # Standalone zero-dependency C implementation of CMD27
-├── scripts/
-│   └── unlock_card.sh        # 1-click automated unlock, wipe & exFAT formatter
-└── docs/
-    └── SDCARD_UNLOCK_RUNBOOK.md # Detailed operational runbook
-```
-
----
-
-## 📜 Credits & Acknowledgments
-- Original `sdtool` reverse-engineering utility by [BertoldVdb](https://github.com/BertoldVdb/sdtool).
-- SD Physical Layer Specification by the SD Association.
-- Linux Kernel MMC subsystem (`mtk-msdc.c`, `bcm2835-mmc.c`).
+> [!WARNING]
+> 1. **Research & E-Waste Reduction Only**: This project is published strictly for educational research, reverse engineering, technical interoperability, and electronic waste reduction (Right to Repair). The objective is to salvage functional flash storage hardware and keep working silicon out of landfills after educational subscriptions terminate.
+> 2. **Irreversible Data Erasure**: The unlocking, wiping, and partitioning procedures **permanently destroy all existing data, partitions, and preloaded content** residing on the storage medium. Ensure proper authorization before reusing media.
+> 3. **No Warranty & Limitation of Liability**: All software, scripts, and documentation are provided **"AS IS"**, without warranty of any kind. Under no circumstances shall the authors or contributors be held liable for any data loss, hardware damage, or unintended consequences. You assume all responsibility.
+> 4. **Trademarks & Fair Use**: All brand names, trademarks, product names, and company names cited (such as BYJU'S, Samsung, MediaTek, Broadcom, Raspberry Pi) are the intellectual property of their respective owners. Their mention is solely for technical diagnostic and descriptive interoperability purposes under fair-use doctrine and does not imply affiliation or endorsement.
