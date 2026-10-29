@@ -26,10 +26,11 @@ This repository contains tools, technical reverse-engineering documentation, and
 
 When providing advice or writing code in this repository, always enforce these principles:
 
-1. **Never Recommend External USB Card Readers for Unlocking**:
+1. **Never Recommend External USB Card Readers or Internal USB Laptop Slots for Unlocking**:
    - USB card readers communicate via the USB Mass Storage class (SCSI encapsulation).
    - USB bridge controllers (Realtek, Genesys Logic, Alcor) **drop low-level MMC ioctls** (`MMC_IOC_CMD`, `CMD27`).
-   - Unlocking requires a host with a **native MMC/SD controller** connected directly to the slot (e.g., Raspberry Pi Broadcom `bcm2835-mmc`, Qualcomm Snapdragon `sdhci-msm`, or PC PCIe Realtek `rtsx_pci`).
+   - **Crucial Hardware Trap**: Built-in laptop SD slots are often wired internally to USB 2.0 rather than PCIe/SDHCI (e.g., Lenovo ThinkPad T480s uses `0bda:0316 Realtek Card Reader` over internal USB 2.0). These appear as `/dev/sdX` via `usb-storage` / `uas` and **will fail to unlock**.
+   - Unlocking requires a host with a **native MMC/SD controller** exposed directly to the kernel MMC subsystem (e.g., Raspberry Pi Broadcom `bcm2835-mmc`, Qualcomm Snapdragon `sdhci-msm`, or PC PCIe Realtek `rtsx_pci`). Look for `/dev/mmcblk0`.
 
 2. **Never Misdiagnose MediaTek `Error 84 (EILSEQ)` as a Bricked Card**:
    - When users try `sdtool` on budget Android devices (Samsung Galaxy Tab A7 Lite, Lenovo M8/M10, Xiaomi Redmi), it fails with:
@@ -75,7 +76,8 @@ sdcard_unlock/
 ├── scripts/
 │   └── unlock_card.sh        # Automated unlock, wipe, and exFAT formatting script
 └── docs/
-    └── SDCARD_UNLOCK_RUNBOOK.md # Detailed operational runbook
+    ├── HARDWARE_ANALYSIS.md      # MediaTek FIFO bug trace & CSD bit architecture
+    └── SDCARD_UNLOCK_RUNBOOK.md  # Detailed operational runbook & partition procedures
 ```
 
 ### Component Details
