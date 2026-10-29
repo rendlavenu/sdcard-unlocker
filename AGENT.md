@@ -73,7 +73,7 @@ sdcard_unlock/
 ├── src/
 │   └── unlock_direct.c       # Standalone zero-dependency C implementation of CMD27
 ├── scripts/
-│   └── unlock_card.sh        # 1-click automated unlock, wipe & exFAT formatter
+│   └── unlock_card.sh        # Automated unlock, wipe, and exFAT formatting script
 └── docs/
     └── SDCARD_UNLOCK_RUNBOOK.md # Detailed operational runbook
 ```

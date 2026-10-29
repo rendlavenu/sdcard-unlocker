@@ -4,68 +4,66 @@
 [![Verified Controller](https://img.shields.io/badge/Verified%20Controller-Broadcom%20bcm2835--mmc%20(Raspberry%20Pi)-blue.svg)](#)
 [![Target Media](https://img.shields.io/badge/Target-OEM%20%2F%20Educational%20MicroSDXC-brightgreen.svg)](#)
 
-> [!IMPORTANT]
-> ### 💡 The Breakthrough (TL;DR)
-> * **The Myth**: Attempting to format locked BYJU'S or educational MicroSD cards on a PC or rooted Android tablet fails with `Write-protected` or `Error 84 (Illegal byte sequence)`. The community assumed these cards had **permanent factory OTP fuses** or vendor-locked firmware.
-> * **The Reality**: The cards are **NOT permanently bricked**. They only have an electronic temporary write-protection bit (`TMP_WRITE_PROTECT`). USB card readers drop the raw low-level unlock command, and budget Android devices fail because MediaTek's Linux kernel driver has a FIFO watermark bug that hangs on 16-byte transfers (`CMD27`).
-> * **The Fix**: Booting any Raspberry Pi 3B+/4 from a USB pendrive provides direct Broadcom MMC bus access, clearing the hardware write-lock in **0.5 seconds** and restoring the card to full 60GB Class 10 storage.
+> [!NOTE]
+> ### Overview
+> * **Background**: Attempting to format locked BYJU'S or educational MicroSD cards on a PC or rooted Android tablet fails with `Write-protected` or `Error 84 (Illegal byte sequence)`. This has led to the common assumption that these cards have permanent factory OTP fuses or vendor-locked firmware.
+> * **Technical Cause**: In most cases, the cards are not permanently locked. They have an electronic temporary write-protection bit set (`TMP_WRITE_PROTECT`). USB card readers cannot pass raw MMC commands, and budget Android devices fail because MediaTek's `mtk-msdc` driver has a FIFO watermark bug on transfers under 512 bytes (`CMD27`).
+> * **Resolution**: Booting a Raspberry Pi 3B+/4 from a USB pendrive provides direct Broadcom MMC bus access, allowing the CSD register to be reprogrammed via software and restoring the card to standard Class 10 storage.
 
 ---
 
-## ⚡ Quick 1-Minute Recovery
-
-If you just want to unlock and format your card immediately:
+## Quick Start
 
 1. **Flash a USB pendrive** with Raspberry Pi OS Lite (64-bit) using [Raspberry Pi Imager](https://www.raspberrypi.com/software/) (enable SSH in settings).
-2. **Boot your Raspberry Pi from USB** with the onboard MicroSD slot empty.
-3. **Hot-plug the locked card** into the Pi's slot (`/dev/mmcblk0`).
+2. **Boot the Raspberry Pi from USB** with the onboard MicroSD slot empty.
+3. **Insert the locked card** into the Pi's slot (`/dev/mmcblk0`).
 4. **SSH into the Pi** and run:
    ```bash
    git clone https://github.com/rendlavenu/sdcard-unlocker.git
    cd sdcard-unlocker
    sudo ./scripts/unlock_card.sh /dev/mmcblk0
    ```
-*(The script automatically clears the hardware lock, wipes both primary & secondary backup GPT tables, and formats as clean, 4 MiB-aligned exFAT).*
+*(The script clears the hardware register bit, wipes primary & backup GPT tables, and formats the partition as exFAT).*
 
 ---
 
 ## 📌 Table of Contents
-1. [The Problem: Why Millions of Cards Were Abandoned](#-the-problem)
-2. [What Was Previously Known vs. Our Novel Discoveries](#-novel-findings--busting-the-mediatek-myth)
-   - [The MediaTek `mtk-msdc` Sub-512B PIO FIFO Bug (Error 84 Root Cause)](#the-mediatek-mtk-msdc-sub-512b-pio-fifo-bug)
-   - [The Host Controller Matrix](#the-host-controller-matrix)
-   - [The Universal Raspberry Pi USB-Boot Workflow](#the-universal-raspberry-pi-usb-boot-workflow)
+1. [Problem Statement](#-problem-statement)
+2. [Technical Analysis: Why Common Methods Fail](#-technical-analysis-why-common-methods-fail)
+   - [The MediaTek `mtk-msdc` Sub-512B PIO FIFO Bug](#the-mediatek-mtk-msdc-sub-512b-pio-fifo-bug)
+   - [Host Controller Compatibility Matrix](#host-controller-compatibility-matrix)
+   - [Raspberry Pi USB-Boot Approach](#raspberry-pi-usb-boot-approach)
 3. [Target Card Identification & Known OEM Markings](#-target-card-identification--known-oem-markings)
-4. [How the Hardware Lock Works (CSD Register Dissection)](#-how-the-hardware-lock-works)
+4. [CSD Register Architecture](#-csd-register-architecture)
 5. [Manual Step-by-Step Procedure](#-manual-step-by-step-procedure)
-6. [Critical Edge Cases (Secondary GPT Restoration, Bus Rescan)](#-edge-cases--technical-deep-dive)
+6. [Critical Edge Cases & Technical Considerations](#-critical-edge-cases--technical-considerations)
 7. [Post-Unlock Verification & Benchmarks](#-post-unlock-verification--benchmarks)
 8. [Troubleshooting & FAQ](#-troubleshooting--faq)
 9. [Disclaimer & Legal Notice](#-disclaimer--legal-notice)
 
 ---
 
-## 🛑 The Problem
+## 🛑 Problem Statement
 
-Millions of 64 GB, 128 GB, and 256 GB MicroSD cards distributed with educational learning tablets (BYJU'S, Aakash, Allen) end up in drawers and e-waste landfills once subscriptions expire. 
+Many 64 GB, 128 GB, and 256 GB MicroSD cards distributed with educational learning tablets (BYJU'S, Aakash, Allen) become unusable once subscriptions expire.
 
-When users connect these cards to a PC, Mac, or camera:
-- Files cannot be deleted, renamed, or added.
+When connected to a PC, Mac, or camera:
+- Files cannot be deleted, modified, or added.
 - Partition editors (`diskpart`, `gparted`, Disk Utility) report `Media is write-protected`.
 - Format attempts fail with `fdatasync: Input/output error` or SCSI `Sense Key: Not Ready / Medium may have changed`.
 
 ---
 
-## 🔬 Novel Findings: Busting the MediaTek Myth
+## 🔬 Technical Analysis: Why Common Methods Fail
 
-Previous forum guides across XDA Developers and Reddit advised using a rooted Android phone with `sdtool`. However, when users ran `sdtool` on their tablets, it consistently failed:
+Previous guides often recommended using a rooted Android phone with `sdtool`. However, when users ran `sdtool` on budget tablets, it consistently failed:
 ```text
 [-] Failed to send command: Illegal byte sequence (Linux errno 84: EILSEQ)
 ```
-This error led the entire community to believe the cards were permanently hardware-locked via OTP fuses.
+This error led to the assumption that the cards were permanently hardware-locked via OTP fuses.
 
 ### The MediaTek `mtk-msdc` Sub-512B PIO FIFO Bug
-During our reverse-engineering investigation on budget Android tablets (MediaTek MT8768/MT6765)—the exact hardware bundled by BYJU'S—we captured low-level kernel driver traces in `dmesg` during `CMD27 (PROGRAM_CSD)` execution:
+During testing on budget Android tablets (MediaTek MT8768/MT6765)—the common hardware bundled by educational providers—we captured kernel driver traces in `dmesg` during `CMD27 (PROGRAM_CSD)` execution:
 
 ```text
 [  412.392011] mtk-msdc 11240000.mmc: CMD<27> arg<00000000> ... resp<00000900>
@@ -86,23 +84,23 @@ During our reverse-engineering investigation on budget Android tablets (MediaTek
 
 ---
 
-### The Host Controller Matrix
+### Host Controller Compatibility Matrix
 
 | Host Controller | Common Hardware | Supports `CMD27` Unlock? | Notes |
 | :--- | :--- | :---: | :--- |
-| **Broadcom `bcm2835-mmc`** | **Raspberry Pi 3B+, 4, Zero 2W** | **✅ YES (100% Reliable)** | Handles arbitrary block lengths without FIFO hangs. Unlocks in < 0.5s. |
-| **Qualcomm `sdhci-msm`** | Snapdragon-based Rooted Phones | **✅ YES** | Supports small block PIO/DMA transfers. |
-| **Samsung `dw_mmc`** | Exynos-based Rooted Phones | **✅ YES** | DesignWare MMC core handles sub-512B payloads. |
-| **MediaTek `mtk-msdc`** | Tab A7 Lite, Redmi, Helio SoCs | **❌ NO** | Fails with `Error 84 (EILSEQ)` / `error -110` due to sub-512B FIFO bug. |
-| **USB Mass Storage** | USB 2.0/3.0 SD Card Readers | **❌ NO** | USB SCSI translation layer drops raw MMC ioctls (`MMC_IOC_CMD`). |
+| **Broadcom `bcm2835-mmc`** | **Raspberry Pi 3B+, 4, Zero 2W** | **Supported** | Handles arbitrary block lengths without FIFO buffer issues. |
+| **Qualcomm `sdhci-msm`** | Snapdragon-based Rooted Phones | **Supported** | Supports small block PIO/DMA transfers. |
+| **Samsung `dw_mmc`** | Exynos-based Rooted Phones | **Supported** | DesignWare MMC core handles sub-512B payloads. |
+| **MediaTek `mtk-msdc`** | Tab A7 Lite, Redmi, Helio SoCs | **Unsupported** | Fails with `Error 84 (EILSEQ)` / `error -110` due to sub-512B FIFO bug. |
+| **USB Mass Storage** | USB 2.0/3.0 SD Card Readers | **Unsupported** | USB SCSI translation layer drops raw MMC ioctls (`MMC_IOC_CMD`). |
 
 ---
 
-### The Universal Raspberry Pi USB-Boot Workflow
-Rather than hunting for rare Qualcomm-rooted phones or laptops with PCIe-attached card readers (Realtek `rtsx_pci`), **any Raspberry Pi 3B+ / 4** provides the ideal unlocking platform:
+### Raspberry Pi USB-Boot Approach
+Rather than requiring specific rooted phones or laptops with PCIe-attached card readers (Realtek `rtsx_pci`), a Raspberry Pi provides a straightforward platform:
 1. The Pi's onboard SD slot connects directly to the Broadcom MMC controller (`/dev/mmcblk0`).
-2. By booting Raspberry Pi OS Lite from an inexpensive **USB flash pendrive**, the native MicroSD slot remains completely unencumbered.
-3. The locked card can be hot-plugged into the Pi and unlocked in one command.
+2. Booting Raspberry Pi OS Lite from a USB pendrive leaves the native MicroSD slot available.
+3. The locked card can then be inserted and rewritten.
 
 ---
 
@@ -144,7 +142,7 @@ When inserted into a Linux system with a native MMC controller, reading the hard
 
 ---
 
-## ⚙️ How the Hardware Lock Works
+## ⚙️ CSD Register Architecture
 
 Standard SD/SDHC/SDXC memory cards adhere to the SD Physical Layer Specification:
 - The internal microcontroller maintains a 128-bit **Card-Specific Data (CSD)** register.
@@ -221,7 +219,7 @@ sudo mkfs.exfat -L "SDCARD" /dev/mmcblk0p1
 
 ---
 
-## 🔍 Edge Cases & Technical Deep-Dive
+## 🔍 Critical Edge Cases & Technical Considerations
 
 ### 1. Secondary GPT Table Auto-Restoration
 * **Issue**: Android formats OEM storage using GUID Partition Tables (GPT). GPT stores a primary table at LBA 1–33 and a redundant **Secondary GPT table** at the final 33 sectors of the disk.
