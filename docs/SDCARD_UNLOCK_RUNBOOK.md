@@ -4,6 +4,15 @@ A production-grade, reproducible runbook for removing hardware electronic write 
 
 ---
 
+> [!WARNING]
+> ### ⚠️ Disclaimer & Risk Warning
+> * **Educational & E-Waste Salvage Purpose**: This runbook is published for technical research, diagnostic interoperability, and electronic waste reduction (Right to Repair) purposes only.
+> * **Permanent Data Erasure**: Executing these instructions will **permanently erase all data and partitions** on the target MicroSD card.
+> * **No Warranty**: Provided "as is" under the MIT license without warranty of any kind. Authors assume no liability for damaged hardware, data loss, or terms-of-service violations. Proceed at your own risk.
+> * **Trademarks**: All brand and product names mentioned belong to their respective owners and are referenced solely for technical identification.
+
+---
+
 ## 1. Technical Architecture & Lock Mechanism
 
 Educational tablet distributors protect their preloaded course cards using low-level SD/MMC hardware register flags:

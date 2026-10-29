@@ -8,6 +8,15 @@ A comprehensive guide, automated tooling, and technical reverse-engineering anal
 
 ---
 
+> [!WARNING]
+> ### ⚠️ Legal & Safety Disclaimer
+> 1. **Research & E-Waste Reduction Only**: This project and repository are published strictly for educational research, reverse engineering, technical interoperability, and electronic waste reduction (Right to Repair). The primary objective is to salvage functional flash storage hardware and keep working silicon out of landfills after educational subscriptions or hardware life cycles terminate.
+> 2. **Irreversible Data Erasure**: The unlocking, wiping, and partitioning procedures described herein will **permanently and irreversibly destroy all existing data, partitions, and preloaded content** residing on the storage medium. Ensure you have proper authorization to reuse the card and that no critical data remains on the device.
+> 3. **No Warranty & Limitation of Liability**: All scripts, binaries, and documentation are provided "AS IS", without warranty of any kind, express or implied, including but not limited to fitness for a particular purpose or non-infringement. Under no circumstances shall the authors or contributors be held liable for any data loss, hardware damage, system instability, or legal ramifications arising from the use or misuse of this repository. You assume all responsibility.
+> 4. **Trademarks**: All brand names, trademarks, product names, and company names cited in this document (including BYJU'S, Samsung, MediaTek, Broadcom, Raspberry Pi) are the intellectual property of their respective owners. Their mention is solely for technical diagnostic and descriptive interoperability purposes under fair use doctrine and does not imply affiliation, sponsorship, or endorsement.
+
+---
+
 ## 📌 Table of Contents
 1. [The Problem: Millions of "Bricked" MicroSD Cards](#-the-problem)
 2. [What Was Previously Known vs. Our Novel Discoveries](#-novel-findings--community-myths-busted)

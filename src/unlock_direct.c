@@ -90,6 +90,8 @@ static int locate_csd_sysfs(const char *devpath, char *out_path, size_t max_len)
 
 static void print_usage(const char *progname) {
     fprintf(stderr, "Usage: %s [options] <device_node>\n\n", progname);
+    fprintf(stderr, "Disclaimer: For educational research and e-waste hardware recovery only.\n");
+    fprintf(stderr, "            Provided AS-IS without warranty of any kind.\n\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  --status      Inspect and print CSD write-protection bits only\n");
     fprintf(stderr, "  --unlock      Clear TMP_WRITE_PROTECT bit and reprogram CSD (Default)\n");
