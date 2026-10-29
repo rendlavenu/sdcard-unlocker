@@ -1,0 +1,11 @@
+# Compiled binaries
+*.o
+*.out
+/src/unlock_direct
+
+# Editor / OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+*~
