@@ -13,6 +13,13 @@ This repository contains tools, technical reverse-engineering documentation, and
 - Before distribution, vendors set the **`TMP_WRITE_PROTECT`** bit (Bit 12 of Byte 14 in the Card-Specific Data register, CSD) via SD bus command `CMD27 (PROGRAM_CSD)`.
 - When users attempt to format or reuse these cards on Windows, macOS, or Linux using standard USB card readers, the card rejects write commands (`Sense Key: Not Ready` / `fdatasync: Input/output error`).
 
+### Target Card Profile & Fingerprint
+- **Form Factor**: 64GB / 128GB / 256GB MicroSDXC Class 10 U1.
+- **Physical Markings**: Rear laser etchings on gold-pin side: `3A2236HIA` / `CMH36A031MA6311` (Made in Taiwan).
+- **Bundled Ecosystems**: BYJU'S Learning App (Think & Learn), Aakash Digital, Allen, PhysicsWallah. Bundled with Samsung Galaxy Tab A7 Lite (`SM-T220`), Lenovo Tab M8/M10 (`TB-8505X`, `TB-X505X`), and Lava tablets.
+- **CID Register**: `000000555344000010000029cc01690d` (Product Name: `USD`, Revision: `0x10`, Date: `09/2022`).
+- **CSD Register**: Locked: `400E00325B590001DC277F800A4010B9` (Byte 14 = `0x10` -> `TMP_WRITE_PROTECT = 1`). Unlocked: `400E00325B590001DC277F800A40008B` (Byte 14 = `0x00`).
+
 ---
 
 ## 2. Fundamental Hardware Rules & Invariants (Never Violate)

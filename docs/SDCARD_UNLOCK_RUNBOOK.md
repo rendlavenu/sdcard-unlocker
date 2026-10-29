@@ -35,7 +35,18 @@ Educational tablet distributors protect their preloaded course cards using low-l
 
 ---
 
-## 2. Requirements & Bill of Materials
+## 2. Target Card Identification & OEM Fingerprints
+
+Verify your card against these known markings and register values:
+
+* **Physical Markings**: 64GB / 128GB MicroSDXC Class 10 U1. Rear gold-pin laser etchings: `3A2236HIA` / `CMH36A031MA6311` (Made in Taiwan).
+* **Bundled Ecosystems**: BYJU'S (Think & Learn), Aakash, Allen, PhysicsWallah educational SD cards. Bundled with Samsung Tab A7 Lite (`SM-T220`), Lenovo Tab M8/M10 (`TB-8505X`, `TB-X505X`).
+* **CID Telemetry**: Product Name (PNM): `USD` (`555344`), Revision: `0x10`, Date: `09/2022`, Raw: `000000555344000010000029cc01690d`.
+* **CSD Register**: Locked Byte 14 = `0x10` (`TMP_WRITE_PROTECT` set). Raw: `400E00325B590001DC277F800A4010B9`.
+
+---
+
+## 3. Requirements & Bill of Materials
 
 1. **Host Board**: Raspberry Pi 3 Model B+, 4, or Zero 2W.
 2. **Boot Media**: Any spare USB flash drive (pendrive) $\ge$ 4GB flashed with **Raspberry Pi OS Lite (64-bit)**.
@@ -44,9 +55,9 @@ Educational tablet distributors protect their preloaded course cards using low-l
 
 ---
 
-## 3. Preparation: Setting Up the USB Boot Drive
+## 4. Preparation: Setting Up the USB Boot Drive
 
-If you already have a USB boot drive, skip to Section 4.
+If you already have a USB boot drive, skip to Section 5.
 
 ### Flashing with Raspberry Pi Imager:
 1. Open **Raspberry Pi Imager** on your computer.
@@ -61,7 +72,7 @@ If you already have a USB boot drive, skip to Section 4.
 
 ---
 
-## 4. Execution Workflow
+## 5. Execution Workflow
 
 ### Step 1: Boot Raspberry Pi from USB
 1. Disconnect power from the Raspberry Pi.
@@ -90,7 +101,7 @@ sudo ./scripts/unlock_card.sh /dev/mmcblk0
 
 ---
 
-## 5. Manual Step-by-Step Commands
+## 6. Manual Step-by-Step Commands
 
 If you prefer running commands manually:
 
@@ -149,7 +160,7 @@ sudo mkfs.exfat -L "SDCARD" /dev/mmcblk0p1
 
 ---
 
-## 6. Edge Cases & Technical Mitigations
+## 7. Edge Cases & Technical Mitigations
 
 ### Edge Case 1: Card Not Detected on Hot-Plug
 * **Symptom**: `/dev/mmcblk0` does not appear after inserting the card while the Pi is booted.
@@ -163,7 +174,7 @@ sudo mkfs.exfat -L "SDCARD" /dev/mmcblk0p1
 ### Edge Case 2: Ghost Partitions Reappearing (Secondary GPT Restoration)
 * **Symptom**: After partitioning and formatting, previous OEM partitions reappear upon re-inserting the card.
 * **Cause**: Android OEM tables use GPT. Wiping only the start of the card leaves the Secondary GPT header intact at the end of the disk, prompting the Linux kernel to restore corrupt partition tables.
-* **Mitigation**: Always wipe both the first 16 MiB and the last 16 MiB of the block device using `wipefs -af` and `dd` seek as demonstrated in Section 5.
+* **Mitigation**: Always wipe both the first 16 MiB and the last 16 MiB of the block device using `wipefs -af` and `dd` seek as demonstrated in Section 6.
 
 ### Edge Case 3: Permanent Write-Protection (`PERM_WRITE_PROTECT`)
 * **Symptom**: `sdtool status` returns `Write protection state: Permanent` (Byte 14 Bit 13 is `1`, e.g. `0x20` or `0x30`).
@@ -187,7 +198,7 @@ sudo mkfs.exfat -L "SDCARD" /dev/mmcblk0p1
 
 ---
 
-## 7. Reassembly Checklist
+## 8. Reassembly Checklist
 
 1. Safely power down the Pi:
    ```bash

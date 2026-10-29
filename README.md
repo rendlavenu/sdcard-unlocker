@@ -19,18 +19,19 @@ A comprehensive guide, automated tooling, and technical reverse-engineering anal
 
 ## 📌 Table of Contents
 1. [The Problem: Millions of "Bricked" MicroSD Cards](#-the-problem)
-2. [What Was Previously Known vs. Our Novel Discoveries](#-novel-findings--community-myths-busted)
+2. [Target Card Identification & Known OEM Fingerprints](#-target-card-identification--known-oem-fingerprints)
+3. [What Was Previously Known vs. Our Novel Discoveries](#-novel-findings--community-myths-busted)
    - [The MediaTek `mtk-msdc` Sub-512B PIO FIFO Bug (Error 84 Root Cause)](#the-mediatek-mtk-msdc-sub-512b-pio-fifo-bug)
    - [The Host Controller Matrix](#the-host-controller-matrix)
    - [The Universal Raspberry Pi USB-Boot Workflow](#the-universal-raspberry-pi-usb-boot-workflow)
-3. [How the Hardware Lock Works (CSD Register Dissection)](#-how-the-hardware-lock-works)
-4. [Prerequisites & Bill of Materials](#-prerequisites)
-5. [Quick Start: 1-Click Automated Recovery](#-quick-start-1-click-recovery)
-6. [Manual Step-by-Step Procedure](#-manual-step-by-step-procedure)
-7. [Edge Cases & Technical Deep-Dive](#-edge-cases--technical-deep-dive)
-8. [Post-Unlock Verification & Benchmarks](#-post-unlock-verification--benchmarks)
-9. [Troubleshooting & FAQ](#-troubleshooting--faq)
-10. [Repository Structure](#-repository-structure)
+4. [How the Hardware Lock Works (CSD Register Dissection)](#-how-the-hardware-lock-works)
+5. [Prerequisites & Bill of Materials](#-prerequisites)
+6. [Quick Start: 1-Click Automated Recovery](#-quick-start-1-click-recovery)
+7. [Manual Step-by-Step Procedure](#-manual-step-by-step-procedure)
+8. [Edge Cases & Technical Deep-Dive](#-edge-cases--technical-deep-dive)
+9. [Post-Unlock Verification & Benchmarks](#-post-unlock-verification--benchmarks)
+10. [Troubleshooting & FAQ](#-troubleshooting--faq)
+11. [Repository Structure](#-repository-structure)
 
 ---
 
@@ -42,6 +43,47 @@ When users connect these cards to a PC, Mac, or camera:
 - Files cannot be deleted, renamed, or added.
 - Partition editors (`diskpart`, `gparted`, Disk Utility) report `Media is write-protected`.
 - Format attempts fail with `fdatasync: Input/output error` or SCSI `Sense Key: Not Ready / Medium may have changed`.
+
+---
+
+## 🔍 Target Card Identification & Known OEM Fingerprints
+
+If you have a locked MicroSD card from an educational bundle, use this section to identify whether your card matches this recovery profile.
+
+### 1. Physical Markings & Laser Etchings
+* **Form Factor**: MicroSDXC (typically 64 GB, 128 GB, or 256 GB), UHS-I Class 10 U1.
+* **Front Casing**: Plain black casing, often unbranded or printed with standard MicroSDXC / Class 10 markings.
+* **Rear Laser Etchings** (micro-etched on the gold contact pin side):
+  * **Line 1 (Batch / Date Code)**: `3A2236HIA` *(or similar batch variations: `3A22...`, `3A21...`)*
+  * **Line 2 (Wafer / Serial Code)**: `CMH36A031MA6311` *(or alphanumeric tracking string)*
+  * **Manufacturing Origin**: Made in Taiwan / OEM assembly.
+
+### 2. Associated Tablets & Educational Bundles
+These cards were widely bundled with tablets by EdTech programs and coaching institutes across India:
+* **Educational Bundles**: **BYJU'S Learning App / Think & Learn Pvt. Ltd.**, **Aakash Digital (AESL)**, **Allen Career Institute**, **PhysicsWallah**, **Extramarks**.
+* **Preloaded Data**: Contains encrypted media catalogs (`.enc`, `.mp4` chunks, `com.byjus.*` assets) and encrypted course partition structures.
+* **Common Bundled Tablet Models**:
+  * **Samsung Galaxy Tab A7 Lite** (`SM-T220` Wi-Fi / `SM-T225` LTE)
+  * **Lenovo Tab M8 HD / FHD** (`TB-8505X`, `TB-8505F`, `TB-8705F`)
+  * **Lenovo Tab M10 / M10 Plus** (`TB-X505X`, `TB-X606V`)
+  * **Lava / Wisdom / Wishtel OEM Android Tablets**
+
+### 3. Electronic Register Telemetry (Sysfs / Dmesg)
+When inserted into a Linux system with a native MMC controller, reading the hardware registers via `/sys/bus/mmc/devices/mmc*:0001/` yields:
+
+| Register / Field | Raw Hex / Value | Interpretation |
+| :--- | :--- | :--- |
+| **Card Identification (CID)** | `000000555344000010000029cc01690d` | Standard OEM flash CID string |
+| **Product Name (PNM)** | `USD` (`55 53 44 00 00`) | Generic OEM product identifier |
+| **Product Revision (PRV)** | `0x10` | Hardware Revision 1.0 |
+| **Manufacturing Date (MDT)** | `0x0169` (09/2022) | Manufactured September 2022 |
+| **Card-Specific Data (CSD) - Locked** | `400E00325B590001DC277F800A4010B9` | **Byte 14 = `0x10` (`TMP_WRITE_PROTECT = 1`)** |
+| **Card-Specific Data (CSD) - Unlocked**| `400E00325B590001DC277F800A40008B` | **Byte 14 = `0x00` (`TMP_WRITE_PROTECT = 0`)** |
+| **SD Status Register (SSR)** | `000000000800000004049000080a...` | Class 10 / High Speed bus indicator |
+| **SD Card Configuration (SCR)** | `0285808300000000` | SD Spec Version 3.0 / Physical Layer |
+
+> [!TIP]
+> If your card's CSD Byte 14 has value **`0x10`**, the write-protection is purely electronic and **100% reversible** using the tools in this repository!
 
 ---
 
